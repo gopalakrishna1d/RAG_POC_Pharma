@@ -1,0 +1,128 @@
+{
+  "database": "FDCRAGDemo",
+  "description": "Demo pharmaceutical quality management application database",
+
+  "tables": {
+
+    "Sites": {
+      "description": "Contains application sites or facilities.",
+      "columns": {
+        "EntityId": "Unique identifier of the site.",
+        "SiteCode": "Unique code identifying the site.",
+        "SiteName": "Name of the site or facility.",
+        "Location": "Geographical location of the site.",
+        "IsActive": "Indicates whether the site is active."
+      },
+      "relationships": []
+    },
+
+    "Users": {
+      "description": "Contains application users and the site to which each user belongs.",
+      "columns": {
+        "EntityId": "Unique identifier of the user.",
+        "UserName": "Full name of the user.",
+        "Email": "Email address of the user.",
+        "SiteId": "Site to which the user belongs.",
+        "IsActive": "Indicates whether the user is active."
+      },
+      "relationships": [
+        {
+          "column": "SiteId",
+          "references": "Sites.EntityId"
+        }
+      ]
+    },
+
+    "Deviations": {
+      "description": "Contains quality deviations reported in the application.",
+      "columns": {
+        "EntityId": "Unique identifier of the deviation.",
+        "DeviationNumber": "Business identifier of the deviation.",
+        "Title": "Title of the deviation.",
+        "Description": "Detailed description of the deviation.",
+        "Status": "Current status of the deviation.",
+        "Severity": "Severity classification of the deviation.",
+        "CreatedOn": "Date and time when the deviation was created.",
+        "SiteId": "Site where the deviation occurred.",
+        "AssignedTo": "User responsible for the deviation."
+      },
+      "relationships": [
+        {
+          "column": "SiteId",
+          "references": "Sites.EntityId"
+        },
+        {
+          "column": "AssignedTo",
+          "references": "Users.EntityId"
+        }
+      ]
+    },
+
+    "CAPA": {
+      "description": "Contains Corrective and Preventive Actions associated with deviations.",
+      "columns": {
+        "EntityId": "Unique identifier of the CAPA.",
+        "CAPANumber": "Business identifier of the CAPA.",
+        "Title": "Title of the CAPA.",
+        "Status": "Current status of the CAPA.",
+        "DeviationId": "Deviation associated with the CAPA.",
+        "CreatedOn": "Date and time when the CAPA was created.",
+        "DueDate": "Due date of the CAPA.",
+        "OwnerId": "User responsible for the CAPA."
+      },
+      "relationships": [
+        {
+          "column": "DeviationId",
+          "references": "Deviations.EntityId"
+        },
+        {
+          "column": "OwnerId",
+          "references": "Users.EntityId"
+        }
+      ]
+    },
+
+    "Actions": {
+      "description": "Contains individual actions created as part of CAPAs.",
+      "columns": {
+        "EntityId": "Unique identifier of the action.",
+        "ActionNumber": "Business identifier of the action.",
+        "Description": "Description of the action.",
+        "Status": "Current status of the action.",
+        "CAPAId": "CAPA to which the action belongs.",
+        "AssignedTo": "User responsible for the action.",
+        "DueDate": "Due date of the action."
+      },
+      "relationships": [
+        {
+          "column": "CAPAId",
+          "references": "CAPA.EntityId"
+        },
+        {
+          "column": "AssignedTo",
+          "references": "Users.EntityId"
+        }
+      ]
+    },
+
+    "Documents": {
+      "description": "Contains controlled documents associated with application sites.",
+      "columns": {
+        "EntityId": "Unique identifier of the document.",
+        "DocumentNumber": "Business identifier of the document.",
+        "Title": "Document title.",
+        "DocumentType": "Type of document such as SOP or Work Instruction.",
+        "Status": "Current document status.",
+        "SiteId": "Site associated with the document.",
+        "CreatedOn": "Date and time when the document was created."
+      },
+      "relationships": [
+        {
+          "column": "SiteId",
+          "references": "Sites.EntityId"
+        }
+      ]
+    }
+
+  }
+}
