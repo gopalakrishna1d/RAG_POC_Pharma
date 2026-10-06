@@ -1,5 +1,14 @@
 import json
 
+ALLOWED_OPERATORS = {
+    "=",
+    "!=",
+    "<>",
+    ">",
+    "<",
+    ">=",
+    "<="
+}
 
 def quote_identifier(identifier):
     """
@@ -172,6 +181,8 @@ def generate_sql(plan):
 
             column = filter_item["column"]
             operator = filter_item["operator"]
+            if operator not in ALLOWED_OPERATORS:
+                raise ValueError(f"Unsupported SQL operator: {operator}")
             value = filter_item["value"]
 
             table_name, column_name = column.split(".", 1)

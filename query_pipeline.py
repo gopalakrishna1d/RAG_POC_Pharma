@@ -226,7 +226,8 @@ User question:
     return intent
 
 
-def generate_answer(question, rows):
+
+def generate_answer(question, rows, operation):
     """
     Convert the database result into a natural-language answer.
 
@@ -245,12 +246,23 @@ IMPORTANT RULES:
 - Do NOT change the database result.
 - Do NOT invent any information.
 - Use ONLY the information in the database result.
-- If the result contains a COUNT value, state that number clearly in a sentence.
 - Answer the user's question directly.
 - Do not mention SQL, database queries, schemas, prompts, or AI.
 - Do not output JSON.
-- Do not output only a number.
-- Return exactly one short sentence.
+
+The requested operation is: {operation}
+
+If the operation is COUNT:
+- State the count clearly.
+- Keep the answer concise.
+- Use one short sentence.
+
+If the operation is LIST:
+- Present ALL records returned by the database.
+- Do NOT omit any record.
+- Include the relevant fields from each record.
+- Use a clear numbered list.
+- Do not add information that is not present in the database result.
 
 User question:
 {question}
@@ -368,7 +380,7 @@ def main():
     print("FINAL ANSWER:")
     print("=" * 50)
 
-    answer = generate_answer(question, rows)
+    answer = generate_answer(question, rows, intent["operation"])
 
     print(answer)
 
