@@ -1,11 +1,13 @@
 import pyodbc
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
 
-SERVER = r"ALTESTSERVER10\SQLSTD19"
-DATABASE = "FDCRAGDemo"
-USERNAME = "sa"
-PASSWORD = "ALlogic@25"
-
+SERVER = os.getenv("DB_SERVER")
+DATABASE = os.getenv("DB_DATABASE")
+USERNAME = os.getenv("DB_USERNAME")
+PASSWORD = os.getenv("DB_PASSWORD")
 
 def get_connection():
     connection_string = (

@@ -298,26 +298,29 @@ def execute_sql(sql):
     finally:
         cursor.close()
         connection.close()
+
+
+
 # ---------------------------------------------------------
-# Main Pipeline
+# Main RAG Pipeline
 # ---------------------------------------------------------
 
-def main():
-    # -----------------------------------------------------
-    # 1. Get user question
-    # -----------------------------------------------------
+def process_question(question):
+    """
+    Execute the complete RAG pipeline for a single question.
 
-    question = input(
-        "\nEnter your question: "
-    ).strip()
+    This function is independent of CLI/FastAPI so that the
+    same RAG logic can be reused by different interfaces.
+    """
+
+    question = question.strip()
 
     if not question:
-        print("Question cannot be empty.")
-        return
+        raise ValueError("Question cannot be empty.")
 
-    # ---------------------------------------------------------
-    # 2. Intent extracted by the LLM
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
+    # 1. Intent extraction
+    # -----------------------------------------------------
 
     print("\nExtracting intent...")
 
@@ -328,16 +331,17 @@ def main():
     print(json.dumps(intent, indent=2))
 
     # -----------------------------------------------------
-    # 3. Load schema
+    # 2. Load schema
     # -----------------------------------------------------
 
     schema = load_schema()
 
     # -----------------------------------------------------
-    # 4. Intent → Query Plan
+    # 3. Intent → Query Plan
     # -----------------------------------------------------
 
     print("\nBuilding query plan...")
+
     plan = build_query_plan(
         intent,
         schema
@@ -348,7 +352,7 @@ def main():
     print(json.dumps(plan, indent=2))
 
     # -----------------------------------------------------
-    # 5. Query Plan → SQL
+    # 4. Query Plan → SQL
     # -----------------------------------------------------
 
     print("\nGenerating SQL...")
@@ -360,15 +364,12 @@ def main():
     print(sql)
 
     # -----------------------------------------------------
-    # 6. Execute SQL
+    # 5. Execute SQL
     # -----------------------------------------------------
 
     print("\nExecuting SQL...")
-    rows = execute_sql(sql)
 
-    # -----------------------------------------------------
-    # 7. Display result
-    # -----------------------------------------------------
+    rows = execute_sql(sql)
 
     print("\nDATABASE RESULT:")
     print("=" * 50)
@@ -376,13 +377,52 @@ def main():
     for row in rows:
         print(row)
 
-    print()
-    print("FINAL ANSWER:")
+    # -----------------------------------------------------
+    # 6. Generate final answer
+    # -----------------------------------------------------
+
+    print("\nFINAL ANSWER:")
     print("=" * 50)
 
-    answer = generate_answer(question, rows, intent["operation"])
+    answer = generate_answer(
+        question,
+        rows,
+        intent["operation"]
+    )
 
     print(answer)
 
+    # -----------------------------------------------------
+    # Return everything needed by API
+    # -----------------------------------------------------
+
+    return {
+        "question": question,
+        "intent": intent,
+        "query_plan": plan,
+        "sql": sql,
+        "rows": rows,
+        "answer": answer
+    }
+
+
+# ---------------------------------------------------------
+# CLI Entry Point
+# ---------------------------------------------------------
+
+def main():
+
+    question = input(
+        "\nEnter your question: "
+    ).strip()
+
+    if not question:
+        print("Question cannot be empty.")
+        return
+
+    process_question(question)
+
+
 if __name__ == "__main__":
     main()
+
