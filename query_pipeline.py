@@ -14,6 +14,7 @@ from sql_generator import generate_sql
 
 llm = ChatOllama(
     model="qwen2.5:3b",
+    # model = "nemotron-3-nano:4b",
     temperature=0
 )
 
