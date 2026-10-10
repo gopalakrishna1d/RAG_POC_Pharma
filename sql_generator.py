@@ -7,7 +7,8 @@ ALLOWED_OPERATORS = {
     ">",
     "<",
     ">=",
-    "<="
+    "<=",
+    "BETWEEN"
 }
 
 def quote_identifier(identifier):
@@ -209,6 +210,14 @@ def generate_sql(plan):
                     raise ValueError(
                         f"Invalid NULL operator: {operator}"
                     )
+
+            elif isinstance(value, (list, tuple)) and operator == "BETWEEN":
+                if len(value) != 2:
+                    raise ValueError("BETWEEN filters require exactly two values.")
+                condition = (
+                    f"{quoted_column} BETWEEN "
+                    f"{escape_sql_value(value[0])} AND {escape_sql_value(value[1])}"
+                )
 
             else:
 

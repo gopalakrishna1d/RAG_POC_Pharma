@@ -38,9 +38,9 @@ Your job is ONLY to identify:
 2. operation
 3. conditions
 4. which entity each condition applies to
+5. any fields explicitly requested by the user
 
 Do NOT identify database tables.
-Do NOT identify database columns.
 Do NOT write SQL.
 Do NOT explain your answer.
 
@@ -52,6 +52,14 @@ Allowed entities:
 - site
 - user
 - document
+
+Allowed condition concepts:
+
+- status
+- name
+- created_on
+- created
+- date
 
 Allowed operations:
 
@@ -76,7 +84,8 @@ JSON format:
       "concept": "name",
       "value": "Hyderabad Manufacturing Plant"
     }}
-  ]
+  ],
+  "fields": ["capa_number", "created_on"]
 }}
 
 Rules:
@@ -85,6 +94,8 @@ Rules:
 - "Show", "list", "which", or "what are" usually means operation = "list".
 - Extract every condition explicitly mentioned by the user.
 - Every condition MUST specify which entity it applies to.
+- If the user asks for specific fields such as "createdon and capaid" or "title and status", include them in the `fields` array.
+- Field names should be short, normalized concepts such as `created_on`, `capa_number`, `title`, `status`, `deviation_number`, `site_name`, `user_name`, `document_type`.
 - If the question says "open deviations", the status condition
   applies to deviation.
 - If the question says "open CAPAs", the status condition
@@ -94,12 +105,14 @@ Rules:
 - If a site/facility/plant is mentioned, use:
     entity = "site"
     concept = "name"
+- If a creation date/time is mentioned, use:
+    concept = "created_on"
+    value = a natural date phrase such as "this month", "last month", "last 30 days", "past 6 months", or a date string.
 - If status is mentioned, determine which entity the status
   describes from the wording.
 - Preserve the user's actual value.
 - Do not invent conditions.
 - Do not identify database table names.
-- Do not identify database column names.
 - Do not write SQL.
 - Do not add explanations.
 - Return JSON only.
@@ -180,6 +193,36 @@ Return:
   ]
 }}
 
+Question:
+Show deviations created this month.
+
+Return:
+
+{{
+  "entity": "deviation",
+  "operation": "list",
+  "conditions": [
+    {{
+      "entity": "deviation",
+      "concept": "created_on",
+      "value": "this month"
+    }}
+  ],
+  "fields": ["deviation_number", "title", "status", "created_on"]
+}}
+
+Question:
+Give me the CreatedOn and CAPAId of all CAPA records.
+
+Return:
+
+{{
+  "entity": "capa",
+  "operation": "list",
+  "fields": ["created_on", "capa_number"],
+  "conditions": []
+}}
+
 User question:
 
 {question}
@@ -225,17 +268,95 @@ User question:
             f"Could not parse LLM intent as JSON: {error}"
         )
 
+    question_lower = question.lower()
+    if isinstance(intent, dict):
+        conditions = intent.get("conditions", [])
+        month_names = [
+            "january", "february", "march", "april", "may", "june",
+            "july", "august", "september", "october", "november", "december",
+            "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec"
+        ]
+
+        found_months = []
+        for month in month_names:
+            pattern = rf"\b{re.escape(month)}\b"
+            if re.search(pattern, question_lower):
+                found_months.append(month)
+
+        if found_months:
+            if not any(
+                condition.get("concept", "").lower() in {"created_on", "created", "date", "created_at"}
+                for condition in conditions
+            ):
+                conditions.append({
+                    "entity": intent.get("entity", "capa"),
+                    "concept": "created_on",
+                    "value": found_months[0]
+                })
+                intent["conditions"] = conditions
+
+            for condition in conditions:
+                if condition.get("concept", "").lower() in {"created_on", "created", "date", "created_at"}:
+                    if len(found_months) >= 2:
+                        start_month = found_months[0]
+                        end_month = found_months[-1]
+                        condition["value"] = [start_month, end_month]
+                    else:
+                        condition["value"] = found_months[0]
+
     return intent
 
 
 
-def generate_answer(question, rows, operation):
-    """
-    Convert the database result into a natural-language answer.
+DISPLAY_COLUMN_NAMES = {
+    "CAPANumber": "CAPA Number",
+    "CAPAId": "CAPA ID",
+    "DeviationNumber": "Deviation Number",
+    "ActionNumber": "Action Number",
+    "DocumentNumber": "Document Number",
+    "CreatedOn": "Created On",
+    "DueDate": "Due Date",
+    "EntityId": "Entity ID",
+    "SiteId": "Site ID",
+    "AssignedTo": "Assigned To",
+    "OwnerId": "Owner ID",
+    "DeviationId": "Deviation ID",
+    "ActionId": "Action ID",
+    "DocumentId": "Document ID",
+}
 
-    The LLM is only responsible for explaining the supplied database result.
+
+def format_column_name(column):
+    """Convert a schema column identifier into a consistent display label."""
+    column_name = column.rsplit(".", 1)[-1]
+    if column_name in DISPLAY_COLUMN_NAMES:
+        return DISPLAY_COLUMN_NAMES[column_name]
+
+    column_name = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", column_name)
+    column_name = re.sub(r"([A-Z])([A-Z][a-z])", r"\1 \2", column_name)
+    return column_name.replace("_", " ").title()
+
+
+def generate_answer(question, rows, operation, columns=None):
+    """
+    Format list results exactly and use the LLM only for non-list responses.
     It must not invent, recalculate, or modify the result.
     """
+
+    if operation == "list":
+        if not rows:
+            return "There are no matching records."
+
+        labels = [format_column_name(column) for column in (columns or [])]
+        lines = [f"Matching records ({len(rows)}):"]
+        for index, row in enumerate(rows, start=1):
+            values = list(row)
+            fields = []
+            for value_index, value in enumerate(values):
+                label = labels[value_index] if value_index < len(labels) else f"Column {value_index + 1}"
+                fields.append(f"{label}: {value}")
+            lines.append(f"{index}. " + "; ".join(fields))
+        return "\n".join(lines)
 
     prompt = f"""
 You are a helpful database assistant.
@@ -389,7 +510,8 @@ def process_question(question):
     answer = generate_answer(
         question,
         rows,
-        intent["operation"]
+        intent["operation"],
+        plan["select"]
     )
 
     print(answer)
@@ -427,4 +549,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

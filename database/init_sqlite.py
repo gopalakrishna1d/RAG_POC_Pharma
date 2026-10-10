@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -92,18 +93,22 @@ USER_ROWS = [
     (5, "Meera Nair", "meera.nair@pharma.local", 2, 1),
 ]
 
+now = datetime.now()
+this_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+previous_month_start = (this_month_start - timedelta(days=1)).replace(day=1)
+
 DEVIATION_ROWS = [
-    (1, "DEV-1001", "Temperature excursion in granulation", "Granulation temperature exceeded the validated range during a batch run.", "Open", "Major", "2025-01-12T09:30:00", 1, 1),
-    (2, "DEV-1002", "Label mix-up in packaging line", "Packaging line printed an incorrect batch label during secondary packaging.", "Closed", "Critical", "2024-12-05T14:10:00", 2, 2),
-    (3, "DEV-1003", "Air handling filter alarm", "The AHU filter alarm triggered during cleanroom changeover and was not released on time.", "Open", "Moderate", "2025-02-14T11:00:00", 1, 3),
-    (4, "DEV-1004", "Raw material weighing variance", "Balance printout showed abnormal variance in raw material weighing for one batch.", "Open", "Major", "2025-03-03T08:45:00", 2, 5),
+    (1, "DEV-1001", "Temperature excursion in granulation", "Granulation temperature exceeded the validated range during a batch run.", "Open", "Major", (this_month_start - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%S"), 1, 1),
+    (2, "DEV-1002", "Label mix-up in packaging line", "Packaging line printed an incorrect batch label during secondary packaging.", "Closed", "Critical", (previous_month_start - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%S"), 2, 2),
+    (3, "DEV-1003", "Air handling filter alarm", "The AHU filter alarm triggered during cleanroom changeover and was not released on time.", "Open", "Moderate", (this_month_start + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S"), 1, 3),
+    (4, "DEV-1004", "Raw material weighing variance", "Balance printout showed abnormal variance in raw material weighing for one batch.", "Open", "Major", (this_month_start + timedelta(days=12)).strftime("%Y-%m-%dT%H:%M:%S"), 2, 5),
 ]
 
 CAPA_ROWS = [
-    (1, "CAPA-2001", "Investigate temperature excursion", "Open", 1, "2025-01-13T10:00:00", "2025-02-20", 1),
-    (2, "CAPA-2002", "Correct packaging label control", "Closed", 2, "2024-12-08T09:15:00", "2025-01-25", 2),
-    (3, "CAPA-2003", "Review AHU filter monitoring", "Open", 3, "2025-02-16T13:00:00", "2025-03-30", 3),
-    (4, "CAPA-2004", "Validate weighing process controls", "Open", 4, "2025-03-04T09:00:00", "2025-04-15", 5),
+    (1, "CAPA-2001", "Investigate temperature excursion", "Open", 1, (this_month_start - timedelta(days=12)).strftime("%Y-%m-%dT%H:%M:%S"), "2025-02-20", 1),
+    (2, "CAPA-2002", "Correct packaging label control", "Closed", 2, (previous_month_start + timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%S"), "2025-01-25", 2),
+    (3, "CAPA-2003", "Review AHU filter monitoring", "Open", 3, (this_month_start + timedelta(days=4)).strftime("%Y-%m-%dT%H:%M:%S"), "2025-03-30", 3),
+    (4, "CAPA-2004", "Validate weighing process controls", "Open", 4, (this_month_start + timedelta(days=15)).strftime("%Y-%m-%dT%H:%M:%S"), "2025-04-15", 5),
 ]
 
 ACTION_ROWS = [
@@ -115,46 +120,74 @@ ACTION_ROWS = [
 ]
 
 DOCUMENT_ROWS = [
-    (1, "DOC-4001", "Temperature Excursion SOP", "SOP", "Approved", 1, "2025-01-05T08:00:00"),
-    (2, "DOC-4002", "Packaging Label Verification Checklist", "Checklist", "Issued", 2, "2024-12-10T10:00:00"),
-    (3, "DOC-4003", "AHU Monitoring Log", "Log", "Active", 1, "2025-02-10T12:00:00"),
-    (4, "DOC-4004", "Weighing Balance Calibration Record", "Record", "Approved", 2, "2025-03-05T11:00:00"),
+    (1, "DOC-4001", "Temperature Excursion SOP", "SOP", "Approved", 1, (this_month_start + timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%S")),
+    (2, "DOC-4002", "Packaging Label Verification Checklist", "Checklist", "Issued", 2, (previous_month_start + timedelta(days=9)).strftime("%Y-%m-%dT%H:%M:%S")),
+    (3, "DOC-4003", "AHU Monitoring Log", "Log", "Active", 1, (this_month_start + timedelta(days=11)).strftime("%Y-%m-%dT%H:%M:%S")),
+    (4, "DOC-4004", "Weighing Balance Calibration Record", "Record", "Approved", 2, (this_month_start + timedelta(days=17)).strftime("%Y-%m-%dT%H:%M:%S")),
 ]
 
 
-def ensure_sqlite_database(db_path=None):
+def reset_sqlite_database(db_path=None):
+    if db_path is None:
+        db_path = get_default_db_path()
+
+    db_file = Path(db_path)
+    if db_file.exists():
+        db_file.unlink()
+
+    return ensure_sqlite_database(db_path)
+
+
+def ensure_sqlite_database(db_path=None, reset=False):
     if db_path is None:
         db_path = get_default_db_path()
 
     db_file = Path(db_path)
     db_file.parent.mkdir(parents=True, exist_ok=True)
 
+    if reset and db_file.exists():
+        db_file.unlink()
+
     connection = sqlite3.connect(db_file)
     connection.execute("PRAGMA foreign_keys = ON")
     connection.executescript(SCHEMA_SQL)
 
-    connection.executemany(
-        "INSERT OR IGNORE INTO Sites(EntityId, SiteCode, SiteName, Location, IsActive) VALUES (?, ?, ?, ?, ?)",
+    def insert_or_replace(table_name, columns, rows):
+        if not rows:
+            return
+        placeholders = ", ".join(["?"] * len(columns))
+        column_sql = ", ".join(columns)
+        query = f"INSERT OR REPLACE INTO {table_name}({column_sql}) VALUES ({placeholders})"
+        connection.executemany(query, rows)
+
+    insert_or_replace(
+        "Sites",
+        ["EntityId", "SiteCode", "SiteName", "Location", "IsActive"],
         SITE_ROWS,
     )
-    connection.executemany(
-        "INSERT OR IGNORE INTO Users(EntityId, UserName, Email, SiteId, IsActive) VALUES (?, ?, ?, ?, ?)",
+    insert_or_replace(
+        "Users",
+        ["EntityId", "UserName", "Email", "SiteId", "IsActive"],
         USER_ROWS,
     )
-    connection.executemany(
-        "INSERT OR IGNORE INTO Deviations(EntityId, DeviationNumber, Title, Description, Status, Severity, CreatedOn, SiteId, AssignedTo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    insert_or_replace(
+        "Deviations",
+        ["EntityId", "DeviationNumber", "Title", "Description", "Status", "Severity", "CreatedOn", "SiteId", "AssignedTo"],
         DEVIATION_ROWS,
     )
-    connection.executemany(
-        "INSERT OR IGNORE INTO CAPA(EntityId, CAPANumber, Title, Status, DeviationId, CreatedOn, DueDate, OwnerId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    insert_or_replace(
+        "CAPA",
+        ["EntityId", "CAPANumber", "Title", "Status", "DeviationId", "CreatedOn", "DueDate", "OwnerId"],
         CAPA_ROWS,
     )
-    connection.executemany(
-        "INSERT OR IGNORE INTO Actions(EntityId, ActionNumber, Description, Status, CAPAId, AssignedTo, DueDate) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    insert_or_replace(
+        "Actions",
+        ["EntityId", "ActionNumber", "Description", "Status", "CAPAId", "AssignedTo", "DueDate"],
         ACTION_ROWS,
     )
-    connection.executemany(
-        "INSERT OR IGNORE INTO Documents(EntityId, DocumentNumber, Title, DocumentType, Status, SiteId, CreatedOn) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    insert_or_replace(
+        "Documents",
+        ["EntityId", "DocumentNumber", "Title", "DocumentType", "Status", "SiteId", "CreatedOn"],
         DOCUMENT_ROWS,
     )
 

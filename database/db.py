@@ -19,7 +19,7 @@ DB_PATH = os.getenv("DB_PATH") or str(Path(__file__).resolve().parent / "fdc_rag
 
 def get_connection():
     if DB_TYPE == "sqlite":
-        ensure_sqlite_database(DB_PATH)
+        ensure_sqlite_database(DB_PATH, reset=False)
         return sqlite3.connect(DB_PATH)
 
     connection_string = (
