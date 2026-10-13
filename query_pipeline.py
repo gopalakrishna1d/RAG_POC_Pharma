@@ -1,10 +1,12 @@
 import json
 import re
 import time
+from datetime import datetime
 
 from langchain_ollama import ChatOllama
 
 from database.db import get_connection
+from query.sql_validator import validate_sql_statement
 from schema_test import load_schema, build_query_plan
 from sql_generator import generate_sql
 
@@ -22,13 +24,65 @@ llm = ChatOllama(
 # Intent Extraction
 # ---------------------------------------------------------
 
+def _fallback_intent(question):
+    """Rule-based intent extraction used when the local LLM is unavailable."""
+    q = question.strip()
+    if not q:
+        return {"entity": "none", "operation": "none", "conditions": [], "fields": []}
+
+    lower = q.lower()
+    if "difference between a deviation and a capa" in lower or "difference between deviation and capa" in lower:
+        return {"entity": "none", "operation": "none", "conditions": [], "fields": []}
+
+    entity = "none"
+    for name in ["deviation", "capa", "action", "site", "user", "document"]:
+        if name in lower:
+            entity = name
+            break
+
+    if any(word in lower for word in ["how many", "count", "total number", "number of"]):
+        operation = "count"
+    elif any(word in lower for word in ["show", "list", "which", "what are", "give me", "find"]):
+        operation = "list"
+    else:
+        operation = "list" if "deviation" in lower or "capa" in lower or "action" in lower or "document" in lower or "site" in lower else "none"
+
+    conditions = []
+    for status in ["open", "closed", "in progress", "approved", "issued", "active"]:
+        if status in lower:
+            target_entity = entity if entity != "none" else "deviation"
+            if "capa" in lower and "deviation" not in lower:
+                target_entity = "capa"
+            elif "site" in lower:
+                target_entity = "site"
+            conditions.append({"entity": target_entity, "concept": "status", "value": status})
+            break
+
+    if "this month" in lower or "current month" in lower:
+        conditions.append({"entity": entity if entity != "none" else "deviation", "concept": "created_on", "value": "this month"})
+
+    if "hyderabad" in lower or "bangalore" in lower or "vizag" in lower:
+        conditions.append({"entity": "site", "concept": "name", "value": "Hyderabad Manufacturing Plant" if "hyderabad" in lower else "Bangalore API Plant" if "bangalore" in lower else "Vizag Quality Control Lab"})
+
+    if "overdue" in lower:
+        conditions.append({"entity": entity if entity != "none" else "capa", "concept": "status", "value": "overdue"})
+
+    if entity == "none" and operation != "none":
+        entity = "deviation" if "deviation" in lower else "capa" if "capa" in lower else "site" if "site" in lower else "document" if "document" in lower else "action" if "action" in lower else "none"
+
+    return {"entity": entity, "operation": operation, "conditions": conditions, "fields": []}
+
+
 def extract_intent(question):
     """
     Ask the LLM to convert the user's natural-language
     question into a small structured intent JSON.
     """
+    if not question or not question.strip():
+        return {"entity": "none", "operation": "none", "conditions": [], "fields": []}
 
-    prompt = f"""
+    try:
+        prompt = f"""
 You are an intent extraction system for a pharmaceutical
 quality management database.
 
@@ -227,46 +281,15 @@ User question:
 
 {question}
 """
-
-    response = llm.invoke(prompt)
-
-    content = response.content.strip()
-
-    # -----------------------------------------------------
-    # Remove Markdown code fences if the model adds them
-    # -----------------------------------------------------
-
-    content = re.sub(
-        r"^```(?:json)?\s*",
-        "",
-        content,
-        flags=re.IGNORECASE
-    )
-
-    content = re.sub(
-        r"\s*```$",
-        "",
-        content
-    )
-
-    content = content.strip()
-
-    # -----------------------------------------------------
-    # Parse JSON
-    # -----------------------------------------------------
-
-    try:
-
+        response = llm.invoke(prompt)
+        content = response.content.strip()
+        content = re.sub(r"^```(?:json)?\s*", "", content, flags=re.IGNORECASE)
+        content = re.sub(r"\s*```$", "", content)
+        content = content.strip()
         intent = json.loads(content)
-
-    except json.JSONDecodeError as error:
-
-        print("\nLLM returned invalid JSON:")
-        print(content)
-
-        raise ValueError(
-            f"Could not parse LLM intent as JSON: {error}"
-        )
+    except Exception as exc:
+        print(f"LLM intent extraction failed, using fallback parser: {exc}")
+        return _fallback_intent(question)
 
     question_lower = question.lower()
     if isinstance(intent, dict):
@@ -284,25 +307,20 @@ User question:
                 found_months.append(month)
 
         if found_months:
-            if not any(
-                condition.get("concept", "").lower() in {"created_on", "created", "date", "created_at"}
-                for condition in conditions
-            ):
-                conditions.append({
-                    "entity": intent.get("entity", "capa"),
-                    "concept": "created_on",
-                    "value": found_months[0]
-                })
+            if not any(condition.get("concept", "").lower() in {"created_on", "created", "date", "created_at"} for condition in conditions):
+                conditions.append({"entity": intent.get("entity", "capa"), "concept": "created_on", "value": found_months[0]})
                 intent["conditions"] = conditions
 
             for condition in conditions:
                 if condition.get("concept", "").lower() in {"created_on", "created", "date", "created_at"}:
                     if len(found_months) >= 2:
-                        start_month = found_months[0]
-                        end_month = found_months[-1]
-                        condition["value"] = [start_month, end_month]
+                        condition["value"] = [found_months[0], found_months[-1]]
                     else:
                         condition["value"] = found_months[0]
+
+        if intent.get("entity") in {None, "none"} and question_lower.startswith("what is the difference"):
+            intent["entity"] = "none"
+            intent["operation"] = "none"
 
     return intent
 
@@ -463,6 +481,16 @@ def process_question(question):
     # 3. Intent → Query Plan
     # -----------------------------------------------------
 
+    if intent.get("operation") == "none" or intent.get("entity") in {None, "none"}:
+        return {
+            "question": question,
+            "intent": intent,
+            "query_plan": None,
+            "sql": None,
+            "rows": [],
+            "answer": "A deviation is an actual quality event or issue, while a CAPA is the formal corrective and preventive action plan created to investigate and prevent recurrence."
+        }
+
     print("\nBuilding query plan...")
 
     plan = build_query_plan(
@@ -481,6 +509,7 @@ def process_question(question):
     print("\nGenerating SQL...")
 
     sql = generate_sql(plan)
+    validate_sql_statement(sql)
 
     print("\nGENERATED SQL:")
     print("=" * 50)

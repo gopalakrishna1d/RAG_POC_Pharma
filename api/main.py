@@ -21,6 +21,8 @@ app = FastAPI(
 
 class ChatRequest(BaseModel):
     question: str
+    conversation_id: str | None = None
+    user_id: str | None = None
 
 
 # ---------------------------------------------------------
@@ -49,18 +51,23 @@ def chat(request: ChatRequest):
             request.question
         )
 
-        return {
+        response = {
             "success": True,
             "question": result["question"],
             "answer": result["answer"],
             "intent": result["intent"],
-            "query_plan": result["query_plan"],
-            "sql": result["sql"],
+            "query_plan": result.get("query_plan"),
+            "sql": result.get("sql"),
             "rows": [
                 list(row)
-                for row in result["rows"]
-            ]
+                for row in result.get("rows", [])
+            ],
         }
+        if request.conversation_id is not None:
+            response["conversation_id"] = request.conversation_id
+        if request.user_id is not None:
+            response["user_id"] = request.user_id
+        return response
 
     except Exception as error:
 

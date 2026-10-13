@@ -195,3 +195,13 @@ def ensure_sqlite_database(db_path=None, reset=False):
     connection.close()
 
     return str(db_file)
+
+
+def main():
+    db_path = ensure_sqlite_database()
+    print(f"SQLite database initialized at: {db_path}")
+    print("Seeded tables: Sites, Users, Deviations, CAPA, Actions, Documents")
+
+
+if __name__ == "__main__":
+    main()
